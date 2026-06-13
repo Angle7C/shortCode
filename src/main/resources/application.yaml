@@ -1,0 +1,20 @@
+
+spring:
+  application:
+    name: shortCode
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://127.0.0.1:5432/short_code
+    username: postgres
+    password: 123456
+
+short-code:
+  route:
+    schema-count: 16
+    table-count-per-schema: 64
+    schema-prefix: code_
+    table-prefix: short_url_mapping_
+
+server:
+  port: 10190
