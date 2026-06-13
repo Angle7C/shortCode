@@ -9,12 +9,22 @@ spring:
     username: postgres
     password: 123456
 
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 3s
+
 short-code:
   route:
     schema-count: 16
     table-count-per-schema: 64
     schema-prefix: code_
     table-prefix: short_url_mapping_
+  cache:
+    local-expire-minutes: 30
+    local-maximum-size: 100000
 
 server:
   port: 10190

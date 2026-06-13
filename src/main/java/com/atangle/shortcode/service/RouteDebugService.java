@@ -4,13 +4,12 @@ import com.atangle.shortcode.routing.RouteTarget;
 import com.atangle.shortcode.routing.SchemaRoutingExecutor;
 import com.atangle.shortcode.routing.ShortCodeRouter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class RouteDebugService {
-    
+
     private final ShortCodeRouter shortCodeRouter;
     private final SchemaRoutingExecutor schemaRoutingExecutor;
 
