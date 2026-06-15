@@ -5,6 +5,8 @@ import com.atangle.shortcode.entity.ShortUrlMapping;
 import com.atangle.shortcode.repository.ShortUrlRepository;
 import com.atangle.shortcode.routing.RouteTarget;
 import com.atangle.shortcode.routing.ShortCodeRouter;
+import com.atangle.shortcode.util.Base62Codec;
+import com.atangle.shortcode.util.SnowflakeIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
@@ -27,7 +29,7 @@ public class ShortUrlService {
     private final ShortCodeRouter shortCodeRouter;
     private final ShortUrlRepository shortUrlRepository;
     private final CacheService cacheService;
-
+    SnowflakeIdGenerator generator=new SnowflakeIdGenerator(1,1);
     public ShortUrlService(
             ShortCodeRouter shortCodeRouter,
             ShortUrlRepository shortUrlRepository,
@@ -39,17 +41,33 @@ public class ShortUrlService {
     }
 
     public CreateShortUrlResult createShortUrl(String originUrl, Integer expireDays, String creator) {
-        Assert.hasText(originUrl, "originUrl must not be blank");
 
-        String normalizedOriginUrl = originUrl.trim();
         String shortCode = generateShortCode();
         RouteTarget routeTarget = shortCodeRouter.routeByShortCode(shortCode);
+        Optional<ShortUrlMapping> existingMapping = shortUrlRepository.findByShortCode(routeTarget, shortCode);
+
+        if (existingMapping.isPresent()) {
+            ShortUrlMapping mapping = existingMapping.get();
+            cacheService.putLocalCache(mapping);
+            cacheService.putRemoteCache(mapping);
+            log.info("Short url already exists, warm cache only, shortCode={}, schema={}, table={}",
+                    shortCode,
+                    routeTarget.schemaName(),
+                    routeTarget.tableName());
+            return new CreateShortUrlResult(
+                    mapping.getShortCode(),
+                    mapping.getOriginUrl(),
+                    routeTarget.schemaName(),
+                    routeTarget.tableName()
+            );
+        }
+
         LocalDateTime now = LocalDateTime.now();
 
         ShortUrlMapping shortUrlMapping = new ShortUrlMapping();
         shortUrlMapping.setShortCode(shortCode);
-        shortUrlMapping.setOriginUrl(normalizedOriginUrl);
-        shortUrlMapping.setOriginUrlHash(md5(normalizedOriginUrl));
+        shortUrlMapping.setOriginUrl(originUrl);
+        shortUrlMapping.setOriginUrlHash(md5(originUrl));
         shortUrlMapping.setCreateTime(now);
         shortUrlMapping.setUpdateTime(now);
         shortUrlMapping.setExpireDays(expireDays);
@@ -64,7 +82,7 @@ public class ShortUrlService {
                 shortCode,
                 routeTarget.schemaName(),
                 routeTarget.tableName());
-        return new CreateShortUrlResult(shortCode, normalizedOriginUrl, routeTarget.schemaName(), routeTarget.tableName());
+        return new CreateShortUrlResult(shortCode, originUrl, routeTarget.schemaName(), routeTarget.tableName());
     }
 
     public String getOriginUrlAndIncreaseAccessCount(String shortCode) {
@@ -113,13 +131,9 @@ public class ShortUrlService {
     }
 
     private String generateShortCode() {
-        StringBuilder builder = new StringBuilder(SHORT_CODE_LENGTH);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        for (int i = 0; i < SHORT_CODE_LENGTH; i++) {
-            int index = random.nextInt(SHORT_CODE_ALPHABET.length());
-            builder.append(SHORT_CODE_ALPHABET.charAt(index));
-        }
-        return builder.toString();
+
+
+        return Base62Codec.encode(generator.nextId());
     }
 
     private String md5(String value) {

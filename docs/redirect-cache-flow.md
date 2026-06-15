@@ -29,3 +29,13 @@ The project now provides these utility classes under `com.atangle.shortcode.util
 
 - `SnowflakeIdGenerator`: thread-safe 64-bit snowflake ID generator
 - `Base62Codec`: Base62 encode/decode utility for `long` and `BigInteger`
+
+## Create Short URL Path
+
+Short URL creation now follows this order:
+
+1. Generate a short code
+2. Query the database by short code
+3. If the short code already exists, write the existing mapping into local cache and Redis
+4. If the short code does not exist, insert the new mapping into the database
+5. After insert, write the new mapping into local cache and Redis
