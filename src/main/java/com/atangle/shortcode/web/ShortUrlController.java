@@ -40,6 +40,10 @@ public class ShortUrlController {
     @GetMapping("/{shortCode}")
     public ResponseEntity<Void> accessShortUrl(@PathVariable String shortCode) {
         String originUrl = shortUrlService.getOriginUrlAndIncreaseAccessCount(shortCode);
+        if (originUrl == null) {
+            log.info("Short url not found for redirect, shortCode={}", shortCode);
+            return ResponseEntity.notFound().build();
+        }
         log.info("Redirect shortCode={} to originUrl={}", shortCode, originUrl);
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, URI.create(originUrl).toString())

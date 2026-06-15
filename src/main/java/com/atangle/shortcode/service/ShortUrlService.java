@@ -5,7 +5,6 @@ import com.atangle.shortcode.entity.ShortUrlMapping;
 import com.atangle.shortcode.repository.ShortUrlRepository;
 import com.atangle.shortcode.routing.RouteTarget;
 import com.atangle.shortcode.routing.ShortCodeRouter;
-import com.github.benmanes.caffeine.cache.Cache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
@@ -27,16 +26,16 @@ public class ShortUrlService {
 
     private final ShortCodeRouter shortCodeRouter;
     private final ShortUrlRepository shortUrlRepository;
-    private final Cache<String, ShortUrlCacheValue> shortUrlLocalCache;
+    private final CacheService cacheService;
 
     public ShortUrlService(
             ShortCodeRouter shortCodeRouter,
             ShortUrlRepository shortUrlRepository,
-            Cache<String, ShortUrlCacheValue> shortUrlLocalCache
+            CacheService cacheService
     ) {
         this.shortCodeRouter = shortCodeRouter;
         this.shortUrlRepository = shortUrlRepository;
-        this.shortUrlLocalCache = shortUrlLocalCache;
+        this.cacheService = cacheService;
     }
 
     public CreateShortUrlResult createShortUrl(String originUrl, Integer expireDays, String creator) {
@@ -59,7 +58,8 @@ public class ShortUrlService {
         shortUrlMapping.setCreator(StringUtils.hasText(creator) ? creator.trim() : null);
 
         shortUrlRepository.insert(routeTarget, shortUrlMapping);
-        shortUrlLocalCache.put(shortCode, new ShortUrlCacheValue(normalizedOriginUrl, STATUS_ENABLED));
+        cacheService.putLocalCache(shortUrlMapping);
+        cacheService.putRemoteCache(shortUrlMapping);
         log.info("Create short url, shortCode={}, schema={}, table={}",
                 shortCode,
                 routeTarget.schemaName(),
@@ -70,28 +70,37 @@ public class ShortUrlService {
     public String getOriginUrlAndIncreaseAccessCount(String shortCode) {
         Assert.hasText(shortCode, "shortCode must not be blank");
 
-        String normalizedShortCode = shortCode.trim();
-        RouteTarget routeTarget = shortCodeRouter.routeByShortCode(normalizedShortCode);
-        ShortUrlCacheValue cacheValue = shortUrlLocalCache.getIfPresent(normalizedShortCode);
+        RouteTarget routeTarget = shortCodeRouter.routeByShortCode(shortCode);
+        Optional<ShortUrlMapping> cachedMapping = cacheService.getLocalRemoteCache(shortCode);
 
-        if (cacheValue != null) {
-            validateStatus(cacheValue.status());
-            shortUrlRepository.increaseAccessCount(routeTarget, normalizedShortCode);
-            log.info("Access short url from local cache, shortCode={}, schema={}, table={}",
-                    normalizedShortCode,
+        if (cachedMapping.isPresent()) {
+            ShortUrlMapping mapping = cachedMapping.get();
+            validateStatus(mapping.getStatus());
+            shortUrlRepository.increaseAccessCount(routeTarget, shortCode);
+            log.info("Access short url from cache, shortCode={}, schema={}, table={}",
+                    shortCode,
                     routeTarget.schemaName(),
                     routeTarget.tableName());
-            return cacheValue.originUrl();
+            return mapping.getOriginUrl();
         }
 
-        Optional<ShortUrlMapping> mappingOptional = shortUrlRepository.findByShortCode(routeTarget, normalizedShortCode);
-        ShortUrlMapping mapping = mappingOptional.orElseThrow(() -> new PiException(4004, "短链不存在"));
+        Optional<ShortUrlMapping> mappingOptional = shortUrlRepository.findByShortCode(routeTarget, shortCode);
+        if (mappingOptional.isEmpty()) {
+            log.info("Short url not found, shortCode={}, schema={}, table={}",
+                    shortCode,
+                    routeTarget.schemaName(),
+                    routeTarget.tableName());
+            return null;
+        }
+
+        ShortUrlMapping mapping = mappingOptional.get();
         validateStatus(mapping.getStatus());
 
-        shortUrlLocalCache.put(normalizedShortCode, new ShortUrlCacheValue(mapping.getOriginUrl(), mapping.getStatus()));
-        shortUrlRepository.increaseAccessCount(routeTarget, normalizedShortCode);
+        cacheService.putLocalCache(mapping);
+        cacheService.putRemoteCache(mapping);
+        shortUrlRepository.increaseAccessCount(routeTarget, shortCode);
         log.info("Access short url from database, shortCode={}, schema={}, table={}",
-                normalizedShortCode,
+                shortCode,
                 routeTarget.schemaName(),
                 routeTarget.tableName());
         return mapping.getOriginUrl();
